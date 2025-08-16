@@ -1,83 +1,73 @@
-const express = require('express');
+const express = require("express");
+const UserProfile = require("../models/userProfile");
+const protectRoute = require("../middleware/protectRoute");
+
 const router = express.Router();
-const UserProfile = require('../models/userProfile');
-const protectRoute = require('../middleware/authMiddleware');
 
-// Create/Update profile
-router.post('/', protectRoute, async (req, res) => {
-    const { name, skills, projects, github } = req.body;
-
-    try {
-        let profile = await UserProfile.findOne({ userId: req.user._id });
-
-        if (profile) {
-            profile.name = name;
-            profile.skills = skills;
-            profile.projects = projects;
-            profile.github = github;
-            await profile.save();
-            return res.json(profile);
-        }
-
-        profile = await UserProfile.create({
-            userId: req.user._id,
-            name,
-            skills,
-            projects,
-            github
-        });
-
-        res.json(profile);
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
+/**
+ * PUBLIC: Get all profiles (Dashboard)
+ */
+router.get("/", async (_req, res) => {
+  const profiles = await UserProfile.find().sort({ createdAt: -1 });
+  res.json(profiles);
 });
 
-// Get own profile
-router.get('/me', protectRoute, async (req, res) => {
-    try {
-        const profile = await UserProfile.findOne({ userId: req.user._id });
-        res.json(profile);
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
+/**
+ * PUBLIC: Get profile by ID (for viewing)
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const profile = await UserProfile.findById(req.params.id);
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+    res.json(profile);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Update a single project
-router.put('/project/:index', protectRoute, async (req, res) => {
-    const { index } = req.params;
-    const { title, description, link } = req.body;
-
-    try {
-        const profile = await UserProfile.findOne({ userId: req.user._id });
-        if (!profile) return res.status(404).json({ message: 'Profile not found' });
-
-        if (!profile.projects[index]) return res.status(404).json({ message: 'Project not found' });
-
-        profile.projects[index] = { title, description, link };
-        await profile.save();
-        res.json(profile.projects[index]);
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
+/**
+ * PRIVATE: Create/Update logged-in user's profile
+ */
+router.post("/", protectRoute, async (req, res) => {
+  try {
+    const { name, email, skills = [], projects = [], github = "" } = req.body || {};
+    let profile = await UserProfile.findOne({ userId: req.user._id });
+    if (profile) {
+      profile.set({ name, email, skills, projects, github });
+    } else {
+      profile = new UserProfile({ name, email, skills, projects, github, userId: req.user._id });
     }
+    await profile.save();
+    res.json(profile);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-// Delete a project
-router.delete('/project/:index', protectRoute, async (req, res) => {
-    const { index } = req.params;
+/**
+ * PRIVATE: Get own profile
+ */
+router.get("/me", protectRoute, async (req, res) => {
+  const profile = await UserProfile.findOne({ userId: req.user._id });
+  res.json(profile);
+});
 
-    try {
-        const profile = await UserProfile.findOne({ userId: req.user._id });
-        if (!profile) return res.status(404).json({ message: 'Profile not found' });
-
-        if (!profile.projects[index]) return res.status(404).json({ message: 'Project not found' });
-
-        profile.projects.splice(index, 1);
-        await profile.save();
-        res.json({ message: 'Project deleted' });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
+/**
+ * PRIVATE: Update profile by ID (owner only)
+ */
+router.put("/:id", protectRoute, async (req, res) => {
+  try {
+    const existing = await UserProfile.findById(req.params.id);
+    if (!existing) return res.status(404).json({ message: "Profile not found" });
+    if (String(existing.userId) !== String(req.user._id)) {
+      return res.status(403).json({ message: "Forbidden: you can only edit your own profile" });
     }
+    existing.set(req.body || {});
+    await existing.save();
+    res.json(existing);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -1,29 +1,31 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-require('dotenv').config();
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+require("dotenv").config();
+
+const protectRoute = require("./middleware/protectRoute"); // ← imported (as requested)
+const authRoutes = require("./routes/auth");
+const profileRoutes = require("./routes/profile");
 
 const app = express();
-
-// Middleware
-app.use(cors());
 app.use(express.json());
+app.use(cors({ origin: "*", credentials: true }));
 
-// Connect MongoDB
-mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => console.log("MongoDB connected"))
-  .catch(err => console.log(err));
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("MongoDB error:", err.message));
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const profileRoutes = require('./routes/profile');
+app.get("/", (_req, res) => res.send("Portfolio Builder API is running"));
 
-// Mount routes
-app.use('/api/auth', authRoutes);     
-app.use('/api/profile', profileRoutes); 
+// Public + Private routes
+app.use("/api/auth", authRoutes);
+app.use("/api/profiles", profileRoutes);
 
-// Start server
+// Example protected health route (handy for testing your token quickly)
+app.get("/api/health/secure-ping", protectRoute, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));

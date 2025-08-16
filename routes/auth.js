@@ -1,72 +1,46 @@
-const express = require('express');
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const User = require("../models/user");
+const protectRoute = require("../middleware/protectRoute");
+
 const router = express.Router();
-const User = require('../models/user');
-const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-// Helper: generate JWT
-const generateToken = (userId) => {
-    return jwt.sign({ _id: userId }, JWT_SECRET, { expiresIn: '1d' });
-};
-
-// Register / signup
-router.post('/register', async (req, res) => {
-    const { username, email, password } = req.body;
-
-    try {
-        // Check if user exists
-        const userExists = await User.findOne({ email });
-        if (userExists) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
-
-        // Create user
-        const newUser = await User.create({ username, email, password });
-
-        // Create token
-        const token = generateToken(newUser._id);
-
-        res.status(201).json({
-            message: "User registered successfully",
-            token,
-            user: {
-                _id: newUser._id,
-                username: newUser.username,
-                email: newUser.email
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
+// Register
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password } = req.body || {};
+    if (!name || !email || !password) return res.status(400).json({ error: "All fields are required" });
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ error: "Email already registered" });
+    const user = new User({ name, email, password });
+    await user.save();
+    res.json({ message: "User registered successfully" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Login
-router.post('/login', async (req, res) => {
-    const { email, password } = req.body;
+router.post("/login", async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: "Email & password required" });
 
-    try {
-        const user = await User.findOne({ email });
-        if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+  const user = await User.findOne({ email });
+  if (!user || !(await user.comparePassword(password))) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
 
-        const isMatch = await user.isPasswordMatch(password);
-        if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+  // IMPORTANT: sign with _id (so protectRoute finds decoded._id)
+  const token = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+  res.json({
+    token,
+    user: { _id: user._id, name: user.name, email: user.email }
+  });
+});
 
-        // Create token
-        const token = generateToken(user._id);
-
-        res.json({
-            message: "Login successful",
-            token,
-            user: {
-                _id: user._id,
-                username: user.username,
-                email: user.email
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
+// Simple "who am I" endpoint using protectRoute (nice for testing)
+router.get("/me", protectRoute, (req, res) => {
+  res.json(req.user);
 });
 
 module.exports = router;
